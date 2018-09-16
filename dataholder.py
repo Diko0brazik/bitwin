@@ -2,6 +2,7 @@ from bitfinexclient import BitfinexClient as BitfinexTradeClient
 from bitfinexclient import BitfinexClient as BitfinexInfoClient
 from datetime import time
 from datetime import timedelta
+import sqlite3
 
 '''Class where we will save 
 all data that we need to 
@@ -28,34 +29,50 @@ class SymbolOhlc:
  'timestamp': '1535849072.0', 'swap': '0.0', 'pl': '-0.0000083022'}
 """
 '''
-tableList = {
-    updateTime = [
-        table,
-        updateTime
-                             ],
-    positions = {'id' = 'int',
-                 'symbol' = 'string',
-                  'status' = 'string',
-                    'base' = ,
-                    'amount' = ,
-                    'timestamp' = ,
-                    'swap' = ,
-                    'pl' = ,
-
+tableList = [ 
+    
+    
+    positions =     {   
+                    'tableName' = 'positions'
+                    'rowsList' =  [   
+                        'id',
+                        'symbol',
+                        'status',
+                        'base',
+                        'amount',
+                        'timestamp',
+                        'swap',
+                        'pl',
+                        'price']
                     }
-
-}
+                    ]
 '''
 
 class Database(): #work with database
     DBFILE = 'data.db'
     def __init__(self):
-        self.dbfile = DBFILE
+        tableDict = {'lastUpdate':
+                        {   'tableName': 'string',
+                            'lastUpdated' : 'int'
+                        },
+                     'positions':   {
+                                 'id' : 'int',
+                                 'symbol' : 'string',
+                                 'status' : 'string',
+                                 'base' : 'float',
+                                 'amount' : 'float',
+                                 'timestamp' : 'int',
+                                 'swap' : 'float',
+                                 'pl' : 'blob',
+                                 'price' : 'float'
+                                    }
+                     }
+        self.dbfile = self.DBFILE
         conn = sqlite3.connect(self.dbfile)
         self.cursor = conn.cursor()
         cursor = self.cursor
-        self.tableList = ['positions', 'valuts', 'tikers', 'updatetime'] #TODO table list
-        self.dbinit()
+        #global tableList = ['positions', 'valuts', 'tikers', 'updatetime'] #TODO table list
+        self.dbinit(tableDict)
 
     def checkTable(self, tableName):
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -64,22 +81,22 @@ class Database(): #work with database
         else:
             return False
 
-    def makeTable(self, table):
-        tableName = table['tablename']
-        rowsDict = table['rowsdict']
-        command = 'CREATE TABLE {} ('.format(tableName)  #CREATE TABLE table_name (column1 datatype, column2 datatype)
+    def _makeTable(self, tableName, rowsDict): # table = { tableName = , rowsList = [row1, row2, ... ] }
+        sql = 'CREATE TABLE IF NOT EXISTS ' + tableName + ' ('
         for key in rowsDict.keys():
-            command = command + key + ' ' + rowsDict[key] + ', '
-        command = command[:-1] + ')'
-        self.cursor.execute(command)
+            sql = sql + key + ', '
+        sql = sql[:-2] + ')'
+        print(sql)
+        self.cursor.execute(sql)
 
+    def dbinit(self, listOftables):
+        for tableName, rowsDict  in listOftables.items():
+            self._makeTable(tableName, rowsDict)
 
-    def dbinit(self, listOftables): # listoftables = [{tablename = , rowsdict = {rowname1 = , rowname2 =  } }, {tablename = ... }]
-        for table in listOftables:
-            if not self.checkTable(table['tablename']):
-                self.makeTable(table)
+    def loadTableToDict(self, tableName):
+        sql = 'select * from ' + tableName
+        self.cursor.execute(sql)
 
-    def loadTableToDict(self):
         pass
 
 
@@ -91,7 +108,8 @@ class ListHolder:
         self.dataList = [] # The info (list of dictionary)
         self.lastUpdateTime = 0 # Last update time reloaded in child
         self.listType = '' #for Type Of Info in the object
-        self._init() #for reload
+        self._init() #for reload set TableName
+        self.loadFromDatabase()
         pass
 
     def _init(self): #Must be reloaded !!!!
@@ -104,45 +122,52 @@ class ListHolder:
     def update(self): # Download from bitfinex return true if updated and set TimeUpdated
         isUpdated = self.downloadFromBitfinex()
         if isUpdated:
-            self.lastUpdateTime = time.now()
+            self.lastUpdateTime = time.time()
         return isUpdated
 
     def getList(self):
+        self.update()
         return self.dataList
+
+    def loadFromDatabase(self):  #TODO load from database
+        self.dataList, self.lastUpdateTime = self.db.loadTableToDict(self.tableName)
+        pass
 
 #класс для хранения маржин позиций
 
 class ListMarginPositions(ListHolder):
     def _init(self):
         self.tableName = 'positions'
-        self.dataList, self.lastUpdateTime = self.loadFromDatabase()
 
     def downloadFromBitfinex(self):
         bf = BitfinexTradeClient()
-        self.dataList = bf.getListOfMarginPositions() #TODO mind about how to chek of internet conn
-        self.lastUpdateTime = time.now()
+        self.dataList = bf.getListOfMarginPositions() #TODO return false if not updated
+        #self.lastUpdateTime = time.time()
+        return True
 
-    def loadFromDatabase(self, db):  #TODO load from database
-        #self.dataList = db.
-        pass
+
 
 
 # class for all data that i needed in app    =============== Main class of info =======================
 class DataHolder():
     def __init__(self):
         self.db = Database()
-        self.positions = ListMarginPositions(self.db)
-        db = self.db
-        #table list
+        self.marginPositions = ListMarginPositions(self.db)
+        self.listForReload = [] #список чего надо обновлять для итерации
+
 
     def checkForReload(self): #if more then 10 seconds from last reload - download new data
         #list of margin positions
-        deltaTime = time.now() - self.positions.lastUpdateTime
+        deltaTime = time.now() - self.marginPositions.lastUpdateTime
         if deltaTime > 1000 : #TODO deltatime
-            self.positions.downloadFromBitfinex()
+            self.marginPositions.downloadFromBitfinex()
 
     def getPositionsList(self):
-        return self.positions
+        self.marginPositions.getList()
+        return self.marginPositions
 
 
+d = DataHolder()
 
+
+d.getPositionsList()

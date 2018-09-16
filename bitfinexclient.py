@@ -97,6 +97,8 @@ class BitfinexClient: #Клиент для работы с Битфайнекс�
             "X-BFX-PAYLOAD": data
         }
 
+    def time(self):
+        return
 #from here worked defs
     def ticker(self, symbol):
         """
